@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+
+# Node
+node_modules/
+dist/
+
+# Local data
+*.db
+*.db-wal
+*.db-shm
+exports/
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+
+# Assessment brief (not part of the deliverable)
+*.pdf
