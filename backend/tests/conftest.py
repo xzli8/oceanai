@@ -59,17 +59,23 @@ def env(tmp_path):
         cwd=BACKEND, env=proc_env,
     )
     base = f"http://127.0.0.1:{port}"
-    for _ in range(100):
+    try:  # always reap the server, even if startup or the test raises something unexpected
+        for _ in range(100):
+            if proc.poll() is not None:
+                raise RuntimeError("server exited during startup")
+            try:
+                httpx.get(base + "/api/actors", timeout=1, trust_env=False)
+                break
+            except httpx.HTTPError:
+                time.sleep(0.1)
+        else:
+            raise RuntimeError("server did not start")
+        e = Env(base, db)
+        e.proc_env = proc_env
+        yield e
+    finally:
+        proc.terminate()
         try:
-            httpx.get(base + "/api/actors", timeout=1, trust_env=False)
-            break
-        except httpx.HTTPError:
-            time.sleep(0.1)
-    else:
-        proc.kill()
-        raise RuntimeError("server did not start")
-    e = Env(base, db)
-    e.proc_env = proc_env
-    yield e
-    proc.terminate()
-    proc.wait(10)
+            proc.wait(10)
+        except subprocess.TimeoutExpired:
+            proc.kill()

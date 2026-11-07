@@ -41,7 +41,10 @@ Admins and tenants are many-to-many through the `admin_tenants` table. Every ten
 | bob@west.test | West (Australia/Perth) | 2 |
 | carol@multi.test | East and West. Shows the many-to-many link and the tenant switcher in the UI. | 1, 2 |
 
-In the UI, pick an admin, then pick one of that admin's tenants.
+In the UI, pick an admin, then pick one of that admin's tenants. The workspace has two tabs:
+
+- **Courses:** every course in the current tenant with completion and certificate counts. Open a course to see each enrollment (completed or incomplete, completion time, certificate) and to run **Bulk issue** for that course.
+- **Certificates:** search, sort, paginate, export, and open a certificate to view its audit trail or revoke it.
 
 ### Demo data, per tenant
 
@@ -71,7 +74,9 @@ Names come from a pool of 100 and dates from 30 days, so many rows share the sam
 |---|---|---|
 | GET | `/api/actors` | Demo actor picker |
 | GET | `/api/me/tenants` | Tenants of the current `X-Actor` |
-| GET | `/api/courses` | Courses in the tenant |
+| GET | `/api/courses` | Courses in the tenant, with enrolled / completed / incomplete / certified / eligible counts |
+| GET | `/api/courses/{id}` | One course with the same counts |
+| GET | `/api/courses/{id}/enrollments?page=&page_size=` | Enrollments with completion time (tenant local) and certificate serial / status |
 | GET | `/api/certificates?q=&sort=&order=&page=&page_size=` | `sort` is one of `issued_date`, `learner_name`, `course_title`, `serial` |
 | GET | `/api/certificates/export.csv?q=&sort=&order=` | Same filter and order as the list. Streamed. |
 | GET | `/api/certificates/{id}` | Detail plus audit trail |
@@ -175,3 +180,5 @@ Measured: the full 100k export takes about 0.6 seconds.
 - **UI export buffers the file in memory.** The UI downloads the CSV via `fetch` into a blob, about 5 MB at 100k rows, so that it can send the actor headers. The API itself streams.
 - **No UI tests.** The UI was checked manually: actor and tenant switching, bulk issue, list, detail, revoke confirmation, and audit trail.
 - **Running `gen_bulk` twice adds another 100k rows** under a new course.
+- **Course counts are computed on every request.** That is fine at 100k enrollments; at larger scale they would be maintained incrementally.
+- **Course and enrollment data is read-only.** It comes from the seed and generator only, by design (scope control).

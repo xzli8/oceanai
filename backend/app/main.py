@@ -49,15 +49,66 @@ def my_tenants(actor: Actor = Depends(get_actor), conn: sqlite3.Connection = Dep
 
 # ---------- courses ----------
 
+COURSE_SUMMARY_SQL = """
+SELECT c.id, c.title,
+       COUNT(e.id)                                                AS enrolled,
+       COALESCE(SUM(e.status = 'COMPLETED'), 0)                   AS completed,
+       COALESCE(SUM(e.status = 'INCOMPLETE'), 0)                  AS incomplete,
+       COALESCE(SUM(ct.status = 'ACTIVE'), 0)                     AS certified_active,
+       COALESCE(SUM(ct.status = 'REVOKED'), 0)                    AS certified_revoked,
+       COALESCE(SUM(e.status = 'COMPLETED' AND ct.id IS NULL), 0) AS eligible
+FROM courses c
+LEFT JOIN enrollments e  ON e.course_id = c.id AND e.tenant_id = c.tenant_id
+LEFT JOIN certificates ct ON ct.tenant_id = e.tenant_id AND ct.learner_id = e.learner_id
+                         AND ct.course_id = e.course_id
+WHERE c.tenant_id = ? {extra}
+GROUP BY c.id
+ORDER BY c.title, c.id
+"""
+
+
 @app.get("/api/courses")
 def list_courses(ctx: TenantCtx = Depends(get_tenant_ctx), conn: sqlite3.Connection = Depends(get_conn)):
-    rows = conn.execute(
-        "SELECT c.id, c.title,"
-        " (SELECT COUNT(*) FROM enrollments e WHERE e.course_id = c.id AND e.tenant_id = c.tenant_id) AS enrolled"
-        " FROM courses c WHERE c.tenant_id = ? ORDER BY c.title, c.id",
-        (ctx.tenant_id,),
-    ).fetchall()
+    rows = conn.execute(COURSE_SUMMARY_SQL.format(extra=""), (ctx.tenant_id,)).fetchall()
     return [dict(r) for r in rows]
+
+
+@app.get("/api/courses/{course_id}")
+def get_course(course_id: int, ctx: TenantCtx = Depends(get_tenant_ctx),
+               conn: sqlite3.Connection = Depends(get_conn)):
+    row = conn.execute(COURSE_SUMMARY_SQL.format(extra="AND c.id = ?"), (ctx.tenant_id, course_id)).fetchone()
+    if not row:
+        raise HTTPException(404, "course not found")
+    return dict(row)
+
+
+@app.get("/api/courses/{course_id}/enrollments")
+def list_enrollments(
+    course_id: int,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    ctx: TenantCtx = Depends(get_tenant_ctx),
+    conn: sqlite3.Connection = Depends(get_conn),
+):
+    if not conn.execute("SELECT 1 FROM courses WHERE id = ? AND tenant_id = ?", (course_id, ctx.tenant_id)).fetchone():
+        raise HTTPException(404, "course not found")
+    total = conn.execute("SELECT COUNT(*) FROM enrollments WHERE tenant_id = ? AND course_id = ?",
+                         (ctx.tenant_id, course_id)).fetchone()[0]
+    rows = conn.execute(
+        "SELECT e.id, e.learner_id, l.name AS learner_name, e.status, e.completed_at,"
+        "       ct.id AS certificate_id, ct.serial, ct.status AS certificate_status"
+        " FROM enrollments e"
+        " JOIN learners l ON l.id = e.learner_id AND l.tenant_id = e.tenant_id"
+        " LEFT JOIN certificates ct ON ct.tenant_id = e.tenant_id AND ct.learner_id = e.learner_id"
+        "      AND ct.course_id = e.course_id"
+        " WHERE e.tenant_id = ? AND e.course_id = ?"
+        " ORDER BY l.name, e.id LIMIT ? OFFSET ?",
+        (ctx.tenant_id, course_id, page_size, (page - 1) * page_size),
+    ).fetchall()
+    items = [{**dict(r),
+              "completed_local": local_datetime(r["completed_at"], ctx.timezone) if r["completed_at"] else None}
+             for r in rows]
+    return {"items": items, "total": total, "page": page, "page_size": page_size}
 
 
 # ---------- certificates ----------

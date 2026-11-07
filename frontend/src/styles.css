@@ -45,3 +45,10 @@ dd { margin: 0; }
 .confirm { background: #fff8c5; border: 1px solid #d4a72c66; padding: 12px; border-radius: 6px; }
 .confirm button { margin-right: 8px; }
 .audit { font-size: 14px; padding-left: 18px; }
+.tabs { display: flex; gap: 4px; margin-top: 16px; }
+.tabs button { border-radius: 6px 6px 0 0; }
+.tabs button.active { background: #fff; font-weight: 600; border-bottom-color: #fff; }
+.stats { display: flex; gap: 20px; flex-wrap: wrap; font-size: 14px; color: #656d76; }
+.stats b { color: #1f2328; margin-left: 4px; }
+.badge.pending { background: #fff8c5; color: #9a6700; }
+button.link { border: none; background: none; padding: 0; color: #0969da; cursor: pointer; }

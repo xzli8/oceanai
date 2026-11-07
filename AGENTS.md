@@ -54,6 +54,10 @@ All resources except `admins` / `admin_tenants` are tenant-isolated.
 - CSV export shares the exact filter/sort builder with the list. Stream with keyset batches; columns:
   learner name, course title, serial number, tenant-local issue date. Must not block list requests.
 
+- Courses (read-only): `GET /api/courses` (with counts), `GET /api/courses/{id}`, `GET /api/courses/{id}/enrollments` (paginated).
+  Courses are always scoped to the current tenant, never aggregated across an admin's tenants.
+  The UI runs bulk issue from the course detail page.
+
 ## Acceptance (must stay green): A1–A7 from the brief
 A1 tenant isolation · A2 idempotent retry (sequential + concurrent) · A3 key misuse → 409 ·
 A4 learner outcomes · A5 Sydney/Perth local dates · A6 100k export < 60s, stable order, list works during export ·

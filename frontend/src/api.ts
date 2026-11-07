@@ -1,5 +1,25 @@
 export type Tenant = { id: number; name: string; timezone: string };
-export type Course = { id: number; title: string; enrolled: number };
+export type Course = {
+  id: number;
+  title: string;
+  enrolled: number;
+  completed: number;
+  incomplete: number;
+  certified_active: number;
+  certified_revoked: number;
+  eligible: number;
+};
+export type Enrollment = {
+  id: number;
+  learner_id: number;
+  learner_name: string;
+  status: "COMPLETED" | "INCOMPLETE";
+  completed_local: string | null;
+  certificate_id: number | null;
+  serial: string | null;
+  certificate_status: "ACTIVE" | "REVOKED" | null;
+};
+export type EnrollmentPage = { items: Enrollment[]; total: number; page: number; page_size: number };
 export type Certificate = {
   id: number;
   serial: string;
@@ -74,6 +94,9 @@ export const api = {
   actors: () => request<string[]>("/api/actors", {}),
   myTenants: (actor: string) => request<{ tenants: Tenant[] }>("/api/me/tenants", { actor }),
   courses: (ctx: Ctx) => request<Course[]>("/api/courses", ctx),
+  course: (ctx: Ctx, id: number) => request<Course>(`/api/courses/${id}`, ctx),
+  enrollments: (ctx: Ctx, id: number, page: number, pageSize: number, signal?: AbortSignal) =>
+    request<EnrollmentPage>(`/api/courses/${id}/enrollments?page=${page}&page_size=${pageSize}`, ctx, { signal }),
   list: (ctx: Ctx, p: ListParams, signal?: AbortSignal) => {
     const s = listQuery(p);
     s.set("page", String(p.page));

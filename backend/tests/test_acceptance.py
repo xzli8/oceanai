@@ -43,6 +43,34 @@ def test_actor_context_and_membership(env):
         assert c.get("/api/certificates").status_code == 401
 
 
+# ---------- courses / enrollments ----------
+
+def test_course_summary_and_enrollments(env):
+    east, west = env.tenant_id("East"), env.tenant_id("West")
+    safety = env.course_id("East", "Safety 101")
+    with env.client(ALICE, east) as c:
+        course = next(x for x in c.get("/api/courses").json() if x["id"] == safety)
+        assert {k: course[k] for k in ("enrolled", "completed", "incomplete", "certified_active", "eligible")} == \
+            {"enrolled": 4, "completed": 3, "incomplete": 1, "certified_active": 1, "eligible": 2}
+        enr = c.get(f"/api/courses/{safety}/enrollments").json()
+        assert enr["total"] == 4
+        by_name = {e["learner_name"]: e for e in enr["items"]}
+        assert by_name["Alex Lee"]["certificate_status"] == "ACTIVE"
+        assert by_name["Jordan Kim"]["status"] == "INCOMPLETE" and by_name["Jordan Kim"]["certificate_id"] is None
+
+        bulk(c, safety, "course-detail")
+        after = c.get(f"/api/courses/{safety}").json()
+        assert after["certified_active"] == 3 and after["eligible"] == 0
+
+    # tenant isolation for the new endpoints
+    with env.client(BOB, west) as c:
+        assert c.get(f"/api/courses/{safety}").status_code == 404
+        assert c.get(f"/api/courses/{safety}/enrollments").status_code == 404
+        assert all(x["id"] != safety for x in c.get("/api/courses").json())
+    with env.client(BOB, east) as c:
+        assert c.get("/api/courses").status_code == 404
+
+
 # ---------- A1 ----------
 
 def test_a1_tenant_isolation(env):

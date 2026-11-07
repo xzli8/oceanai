@@ -7,6 +7,7 @@ import {
   type CertPage,
   type Course,
   type Ctx,
+  type EnrollmentPage,
   type ListParams,
   type Tenant,
 } from "./api";
@@ -87,13 +88,38 @@ export default function App() {
 }
 
 function TenantWorkspace({ ctx, tenant }: { ctx: Ctx; tenant: Tenant }) {
+  const [tab, setTab] = useState<"courses" | "certificates">("courses");
+  const [courseId, setCourseId] = useState<number | null>(null);
   const [refresh, setRefresh] = useState(0);
   const [openId, setOpenId] = useState<number | null>(null);
   const bump = () => setRefresh((n) => n + 1);
   return (
     <main>
-      <BulkIssuePanel ctx={ctx} onDone={bump} />
-      <CertificateList ctx={ctx} tenant={tenant} refresh={refresh} onOpen={setOpenId} />
+      <nav className="tabs">
+        <button className={tab === "courses" ? "active" : ""} onClick={() => setTab("courses")}>
+          Courses
+        </button>
+        <button className={tab === "certificates" ? "active" : ""} onClick={() => setTab("certificates")}>
+          Certificates
+        </button>
+      </nav>
+      {tab === "courses" &&
+        (courseId == null ? (
+          <CourseList ctx={ctx} tenant={tenant} refresh={refresh} onOpen={setCourseId} />
+        ) : (
+          <CourseDetail
+            key={courseId}
+            ctx={ctx}
+            courseId={courseId}
+            refresh={refresh}
+            onBack={() => setCourseId(null)}
+            onChanged={bump}
+            onOpenCert={setOpenId}
+          />
+        ))}
+      {tab === "certificates" && (
+        <CertificateList ctx={ctx} tenant={tenant} refresh={refresh} onOpen={setOpenId} />
+      )}
       {openId != null && (
         <DetailPanel ctx={ctx} id={openId} onClose={() => setOpenId(null)} onChanged={bump} />
       )}
@@ -101,29 +127,221 @@ function TenantWorkspace({ ctx, tenant }: { ctx: Ctx; tenant: Tenant }) {
   );
 }
 
+// ---------------- courses ----------------
+
+function CourseList({
+  ctx,
+  tenant,
+  refresh,
+  onOpen,
+}: {
+  ctx: Ctx;
+  tenant: Tenant;
+  refresh: number;
+  onOpen: (id: number) => void;
+}) {
+  const [courses, setCourses] = useState<Course[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [retry, setRetry] = useState(0);
+
+  useEffect(() => {
+    let stale = false;
+    setError(null);
+    api
+      .courses(ctx)
+      .then((c) => !stale && setCourses(c))
+      .catch((e) => !stale && setError(errText(e)));
+    return () => {
+      stale = true;
+    };
+  }, [ctx, refresh, retry]);
+
+  return (
+    <section className="card">
+      <h2>Courses — {tenant.name}</h2>
+      {error ? (
+        <div className="banner error">
+          Failed to load courses — {error} <button onClick={() => setRetry((n) => n + 1)}>Retry</button>
+        </div>
+      ) : !courses ? (
+        <p className="muted">Loading…</p>
+      ) : courses.length === 0 ? (
+        <p className="empty">No courses in this tenant.</p>
+      ) : (
+        <table>
+          <thead>
+            <tr>
+              <th>Course</th>
+              <th>Enrolled</th>
+              <th>Completed</th>
+              <th>Incomplete</th>
+              <th>Certified</th>
+              <th>Eligible to issue</th>
+            </tr>
+          </thead>
+          <tbody>
+            {courses.map((c) => (
+              <tr key={c.id} className="clickable" onClick={() => onOpen(c.id)}>
+                <td>{c.title}</td>
+                <td>{c.enrolled.toLocaleString()}</td>
+                <td>{c.completed.toLocaleString()}</td>
+                <td>{c.incomplete.toLocaleString()}</td>
+                <td>
+                  {c.certified_active.toLocaleString()}
+                  {c.certified_revoked > 0 && <span className="muted"> (+{c.certified_revoked} revoked)</span>}
+                </td>
+                <td>{c.eligible > 0 ? <b>{c.eligible.toLocaleString()}</b> : 0}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </section>
+  );
+}
+
+function CourseDetail({
+  ctx,
+  courseId,
+  refresh,
+  onBack,
+  onChanged,
+  onOpenCert,
+}: {
+  ctx: Ctx;
+  courseId: number;
+  refresh: number;
+  onBack: () => void;
+  onChanged: () => void;
+  onOpenCert: (id: number) => void;
+}) {
+  const [course, setCourse] = useState<Course | null>(null);
+  const [data, setData] = useState<EnrollmentPage | null>(null);
+  const [page, setPage] = useState(1);
+  const pageSize = 20;
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [retry, setRetry] = useState(0);
+
+  useEffect(() => {
+    const ac = new AbortController();
+    setLoading(true);
+    setError(null);
+    Promise.all([api.course(ctx, courseId), api.enrollments(ctx, courseId, page, pageSize, ac.signal)])
+      .then(([c, e]) => {
+        if (ac.signal.aborted) return;
+        setCourse(c);
+        setData(e);
+      })
+      .catch((e) => !ac.signal.aborted && setError(errText(e)))
+      .finally(() => !ac.signal.aborted && setLoading(false));
+    return () => ac.abort();
+  }, [ctx, courseId, page, refresh, retry]);
+
+  const totalPages = data ? Math.max(1, Math.ceil(data.total / pageSize)) : 1;
+
+  return (
+    <>
+      <section className="card">
+        <div className="row space">
+          <h2>{course ? course.title : "Course"}</h2>
+          <button onClick={onBack}>← All courses</button>
+        </div>
+        {course && (
+          <div className="stats">
+            <span>Enrolled <b>{course.enrolled}</b></span>
+            <span>Completed <b>{course.completed}</b></span>
+            <span>Incomplete <b>{course.incomplete}</b></span>
+            <span>Certified <b>{course.certified_active}</b></span>
+            {course.certified_revoked > 0 && <span>Revoked <b>{course.certified_revoked}</b></span>}
+            <span>Eligible <b>{course.eligible}</b></span>
+          </div>
+        )}
+      </section>
+
+      {course && <BulkIssuePanel ctx={ctx} course={course} onDone={onChanged} />}
+
+      <section className="card">
+        <h2>Enrollments</h2>
+        {error ? (
+          <div className="banner error">
+            Failed to load enrollments — {error} <button onClick={() => setRetry((n) => n + 1)}>Retry</button>
+          </div>
+        ) : !data ? (
+          <p className="muted">Loading…</p>
+        ) : data.items.length === 0 ? (
+          <p className="empty">No learners enrolled in this course.</p>
+        ) : (
+          <div className={loading ? "loading" : ""}>
+            <table>
+              <thead>
+                <tr>
+                  <th>Learner</th>
+                  <th>Enrollment</th>
+                  <th>Completed at</th>
+                  <th>Certificate</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.items.map((e) => (
+                  <tr key={e.id}>
+                    <td>{e.learner_name}</td>
+                    <td>
+                      <span className={`badge ${e.status === "COMPLETED" ? "active" : "pending"}`}>{e.status}</span>
+                    </td>
+                    <td>{e.completed_local ?? "—"}</td>
+                    <td>
+                      {e.certificate_id ? (
+                        <button className="link" onClick={() => onOpenCert(e.certificate_id!)}>
+                          <span className="mono">{e.serial}</span>{" "}
+                          <span className={`badge ${e.certificate_status!.toLowerCase()}`}>{e.certificate_status}</span>
+                        </button>
+                      ) : e.status === "COMPLETED" ? (
+                        <span className="outcome skipped">Not issued — eligible</span>
+                      ) : (
+                        <span className="muted">—</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <div className="row pager">
+              <button disabled={page <= 1 || loading} onClick={() => setPage((p) => p - 1)}>
+                Prev
+              </button>
+              <span>
+                Page {page} / {totalPages} · {data.total.toLocaleString()} enrolled
+              </span>
+              <button disabled={page >= totalPages || loading} onClick={() => setPage((p) => p + 1)}>
+                Next
+              </button>
+            </div>
+          </div>
+        )}
+      </section>
+    </>
+  );
+}
+
 // ---------------- bulk issue ----------------
 
-function BulkIssuePanel({ ctx, onDone }: { ctx: Ctx; onDone: () => void }) {
-  const [courses, setCourses] = useState<Course[]>([]);
-  const [courseId, setCourseId] = useState<number | null>(null);
+function BulkIssuePanel({ ctx, course, onDone }: { ctx: Ctx; course: Course; onDone: () => void }) {
   const [status, setStatus] = useState<"idle" | "running" | "done" | "error">("idle");
   const [result, setResult] = useState<BulkResult | null>(null);
   const [error, setError] = useState<string | null>(null);
-  // One key per intended operation: reused on retry after an error, rotated after success or course change.
+  // One key per intended operation: reused on retry after an error, rotated after success.
+  // The panel is remounted per course (CourseDetail key), so a key never spans two courses.
   const keyRef = useRef<string>(crypto.randomUUID());
   const inFlight = useRef(false);
 
-  useEffect(() => {
-    api.courses(ctx).then(setCourses).catch((e) => setError(errText(e)));
-  }, [ctx]);
-
   const submit = async () => {
-    if (courseId == null || inFlight.current) return;
+    if (inFlight.current) return;
     inFlight.current = true;
     setStatus("running");
     setError(null);
     try {
-      const r = await api.bulkIssue(ctx, courseId, keyRef.current);
+      const r = await api.bulkIssue(ctx, course.id, keyRef.current);
       setResult(r);
       setStatus("done");
       keyRef.current = crypto.randomUUID();
@@ -138,35 +356,22 @@ function BulkIssuePanel({ ctx, onDone }: { ctx: Ctx; onDone: () => void }) {
 
   return (
     <section className="card">
-      <h2>Bulk issue</h2>
-      <div className="row">
-        <select
-          value={courseId ?? ""}
-          disabled={status === "running"}
-          onChange={(e) => {
-            setCourseId(e.target.value ? Number(e.target.value) : null);
-            keyRef.current = crypto.randomUUID();
-            setResult(null);
-            setStatus("idle");
-          }}
-        >
-          <option value="">Select course…</option>
-          {courses.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.title} ({c.enrolled} enrolled)
-            </option>
-          ))}
-        </select>
-        <button onClick={submit} disabled={courseId == null || status === "running"}>
-          {status === "running" ? "Issuing…" : status === "error" ? "Retry" : "Issue to eligible learners"}
+      <div className="row space">
+        <h2>Bulk issue</h2>
+        <button onClick={submit} disabled={status === "running"}>
+          {status === "running"
+            ? "Issuing…"
+            : status === "error"
+              ? "Retry"
+              : `Issue to eligible learners (${course.eligible})`}
         </button>
       </div>
       {error && <div className="banner error">Bulk issue failed — {error}</div>}
       {result && status === "done" && (
         <div>
           <p className="banner ok">
-            Operation #{result.operation_id} ({result.course_title}){result.replayed ? " — replayed" : ""}:{" "}
-            {result.summary.issued} issued, {result.summary.skipped} skipped, {result.summary.failed} failed
+            Operation #{result.operation_id}{result.replayed ? " (replayed)" : ""}: {result.summary.issued} issued,{" "}
+            {result.summary.skipped} skipped, {result.summary.failed} failed
           </p>
           <table>
             <thead>
@@ -177,7 +382,7 @@ function BulkIssuePanel({ ctx, onDone }: { ctx: Ctx; onDone: () => void }) {
               </tr>
             </thead>
             <tbody>
-              {result.results.map((r) => (
+              {result.results.slice(0, 200).map((r) => (
                 <tr key={r.learner_id}>
                   <td>{r.learner_name}</td>
                   <td className={`outcome ${r.outcome}`}>{r.outcome}</td>
@@ -186,11 +391,15 @@ function BulkIssuePanel({ ctx, onDone }: { ctx: Ctx; onDone: () => void }) {
               ))}
             </tbody>
           </table>
+          {result.results.length > 200 && (
+            <p className="muted">Showing first 200 of {result.results.length} outcomes.</p>
+          )}
         </div>
       )}
     </section>
   );
 }
+
 
 // ---------------- list ----------------
 

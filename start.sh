@@ -14,10 +14,23 @@ cd "$ROOT/backend"
 cd "$ROOT/frontend"
 [ -d node_modules ] || npm install --no-audit --no-fund
 
+# Fail fast instead of silently pairing the UI with a stale backend.
+for port in 8000 5173; do
+  if lsof -iTCP:$port -sTCP:LISTEN >/dev/null 2>&1; then
+    echo "Port $port is already in use (another instance running?). Stop it first." >&2
+    exit 1
+  fi
+done
+
 cd "$ROOT/backend"
 .venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000 &
 API_PID=$!
 trap 'kill $API_PID 2>/dev/null' EXIT INT TERM
+for _ in $(seq 50); do
+  curl -sf --noproxy '*' http://127.0.0.1:8000/api/actors >/dev/null && break
+  kill -0 $API_PID 2>/dev/null || { echo "API failed to start" >&2; exit 1; }
+  sleep 0.2
+done
 
 cd "$ROOT/frontend"
 echo "API: http://127.0.0.1:8000   UI: http://127.0.0.1:5173"
