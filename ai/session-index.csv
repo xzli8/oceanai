@@ -1,0 +1,2 @@
+session_id,tool,model,started_at,ended_at,export_file,purpose,related_commits
+0c74d973-8a16-4c7b-bff7-5274b9753742,Claude Code (CLI),claude-opus-5-5,2026-11-07T16:50:25+08:00,TBD,ai/sessions/0c74d973-8a16-4c7b-bff7-5274b9753742.jsonl,"Planning, data model, backend, tests, frontend, course views, README, decision log",2e4fcc5;2568457;3735bb1;8244203;ed273e3;f406f1c;TBD
