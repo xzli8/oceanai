@@ -43,5 +43,4 @@ Narrow string replacements only. The substance of the interaction is unchanged.
 - The demo accounts (`alice@east.test`, `bob@west.test`, `carol@multi.test`) are fictional seed data and are not redacted.
 
 ## Section 6 (written answers)
-
-<!-- To be completed by the candidate personally. -->
+I confirm that Section 6 (`written-answers.md`) was completed by me alone, without any AI assistance, including translation and language polishing.
